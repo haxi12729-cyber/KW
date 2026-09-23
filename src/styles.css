@@ -33,6 +33,17 @@ button { transition: background .15s, color .15s; }
 .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
 .entry-panel { padding: 35px; }
 .entry-panel h2 { font-family: var(--serif); font-size: 29px; margin: 0 0 28px; font-weight: 500; }
+.variant-picker { margin: 0 0 28px; padding: 0; border: 0; }
+.variant-picker legend { margin-bottom: 10px; color: var(--muted); font-size: 12px; letter-spacing: 1px; }
+.variant-picker > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.variant-picker label { position: relative; display: block; min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: #fffdf8; cursor: pointer; }
+.variant-picker label:hover { background: #f6eddf; }
+.variant-picker label.selected { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
+.variant-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.variant-picker input:focus-visible + span { outline: 3px solid var(--red); outline-offset: 3px; }
+.variant-picker label > span { display: grid; gap: 4px; min-height: 68px; align-content: center; padding: 10px 12px; border-radius: inherit; }
+.variant-picker strong { font-size: 14px; }
+.variant-picker small { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .entry-option { margin-bottom: 26px; }
 .option-heading { display: flex; gap: 12px; align-items: center; }
 .option-number { font-family: Georgia, serif; color: #90724f; font-size: 13px; }
@@ -73,6 +84,10 @@ footer { max-width: 1200px; margin: auto; border-top: 1px solid var(--line); pad
 .piece { width: 78%; aspect-ratio: 1; display: grid; place-items: center; border: 2px solid #9b743f; border-radius: 50%; background: #f9e4b8; box-shadow: inset 0 0 0 2px #f9e4b8, inset 0 0 0 3px #c6a16c, 0 3px 0 #ae8047, 0 4px 5px #50361838; font-family: var(--serif); font-weight: 700; font-size: 5.1cqw; line-height: 1; user-select: none; }
 .piece.red { color: #a1241b; }
 .piece.black { color: #302a23; }
+.piece.covered { position: relative; overflow: hidden; color: transparent; background: #c79c61; border-color: currentColor; box-shadow: inset 0 0 0 3px #e2bd81, inset 0 0 0 5px currentColor, 0 3px 0 #8f6537, 0 4px 5px #50361838; }
+.piece.covered.red { color: var(--red); }
+.piece.covered.black { color: #302a23; }
+.cover-mark { width: 43%; aspect-ratio: 1; border: 2px solid currentColor; transform: rotate(45deg); box-shadow: inset 0 0 0 3px #c79c61, inset 0 0 0 4px currentColor; }
 .intersection.selected::before, .intersection.capture-target::before { content: ''; position: absolute; width: 88%; aspect-ratio: 1; border: 2px solid var(--red); border-radius: 50%; pointer-events: none; }
 .intersection.capture-target::before { border-style: dashed; }
 .target-dot { width: 20%; aspect-ratio: 1; background: #426348; border: 2px solid #f5e5bc; border-radius: 50%; pointer-events: none; }
@@ -142,6 +157,7 @@ td:nth-child(2) { color: var(--red); }
   .game-layout { margin-top: 20px; }
   .board-frame { border-width: 6px; }
   .piece { border-width: 1px; box-shadow: inset 0 0 0 1px #f9e4b8, inset 0 0 0 2px #c6a16c, 0 2px 0 #ae8047; }
+  .piece.covered { box-shadow: inset 0 0 0 2px #e2bd81, inset 0 0 0 3px currentColor, 0 2px 0 #8f6537; }
   .board-help { font-size: 11px; }
   footer { font-size: 12px; line-height: 1.8; }
 }

@@ -5,3 +5,4 @@ dist/
 .npm-cache/
 *-debug.log
 .firebase/
+.netlify/

@@ -1,13 +1,13 @@
-import { pieceName, posKey, toSquare, type Board, type Pos } from './game'
+import { effectiveColor, pieceName, posKey, toSquare, type Board, type GameVariant, type Pos } from './game'
 
 const point = (row: number, col: number) => ({ x: 50 + col * 100, y: 50 + row * 100 })
 const marks = [[2, 1], [2, 7], [7, 1], [7, 7], ...[3, 6].flatMap(row => [0, 2, 4, 6, 8].map(col => [row, col]))]
 
-export default function BoardView({ board, selected = null, targets = [], onCell, disabled = false }: {
-  board: Board; selected?: Pos | null; targets?: Pos[]; onCell?: (p: Pos) => void; disabled?: boolean
+export default function BoardView({ board, variant = 'standard', selected = null, targets = [], onCell, disabled = false }: {
+  board: Board; variant?: GameVariant; selected?: Pos | null; targets?: Pos[]; onCell?: (p: Pos) => void; disabled?: boolean
 }) {
   const targetKeys = new Set(targets.map(posKey))
-  return <div className="board" role="group" aria-label={onCell ? '中国象棋棋盘' : '中国象棋开局示意'}>
+  return <div className="board" role="group" aria-label={(variant === 'jieqi-mixed' ? '红黑混合揭棋' : '中国象棋') + (onCell ? '棋盘' : '开局示意')}>
     <svg className="board-lines" viewBox="0 0 900 1000" aria-hidden="true">
       <rect className="river-fill" x="50" y="450" width="800" height="100" />
       <g className="grid-lines">
@@ -28,12 +28,17 @@ export default function BoardView({ board, selected = null, targets = [], onCell
       const p = { row: r, col: c }; const { x, y } = point(r, c)
       const active = selected && posKey(selected) === posKey(p)
       const target = targetKeys.has(posKey(p))
-      const content = piece ? <span className={`piece ${piece.color}`}>{pieceName(piece)}</span> : target ? <span className="target-dot" /> : null
+      const shownColor = piece ? effectiveColor(piece) : null
+      const content = piece ? <span className={`piece ${shownColor} ${piece.cover ? 'covered' : ''}`}>{piece.cover ? <span className="cover-mark" aria-hidden="true" /> : pieceName(piece)}</span> : target ? <span className="target-dot" /> : null
+      const label = piece ? piece.cover
+        ? `${piece.cover.color === 'red' ? '红方' : '黑方'}暗${pieceName(piece.cover)}位置`
+        : pieceName(piece)
+        : '空位'
       const style = { left: x / 9 + '%', top: y / 10 + '%' }
       return onCell ? <button key={posKey(p)} type="button" data-row={r} data-col={c}
         className={`intersection ${active ? 'selected' : ''} ${target && piece ? 'capture-target' : ''}`}
         style={style} disabled={disabled} aria-pressed={Boolean(active)}
-        aria-label={toSquare(p) + (piece ? pieceName(piece) : '空位')} onClick={() => onCell(p)}>{content}</button>
+        aria-label={toSquare(p) + label} onClick={() => onCell(p)}>{content}</button>
         : piece ? <span key={posKey(p)} className="intersection" style={style} aria-hidden="true">{content}</span> : null
     }))}
   </div>

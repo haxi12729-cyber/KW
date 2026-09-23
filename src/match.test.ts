@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { actMatch, activeRequest, moveMatch, type Match } from './match'
-import { initialBoard, fromSquare, boardFromFen, isInCheck } from './game'
+import { initialBoard, initialBoardFor, fromSquare, boardFromFen, isInCheck } from './game'
 
 const fresh = (): Match => ({ board: initialBoard(), turn: 'red', status: 'playing', moves: [], version: 0, gameId: 1 })
 const moved = () => moveMatch(fresh(), fromSquare('a3'), fromSquare('a4'), 0)
@@ -50,6 +50,16 @@ describe('timed match actions', () => {
     expect(restored.board).toEqual(capture.board); expect(restored.moves).toHaveLength(1)
     const undoCapture = actMatch(ask(restored), 'black', 'b', { type: 'accept', id: 'request-1' }, 2000)
     expect(undoCapture.board).toEqual(initialBoard())
+  })
+  it('restores a revealed mixed-color piece to its concealed state', () => {
+    const board = initialBoardFor('jieqi-mixed', () => 0)
+    const game: Match = { board, variant: 'jieqi-mixed', turn: 'red', status: 'playing', moves: [], version: 0, gameId: 1 }
+    const moved = moveMatch(game, fromSquare('a3'), fromSquare('a4'), 0)
+    expect(moved.board[5][0]?.cover).toBeUndefined()
+    const requested = actMatch(moved, 'red', 'r', { type: 'request', kind: 'undo', id: 'mixed' }, 100)
+    const restored = actMatch(requested, 'black', 'b', { type: 'accept', id: 'mixed' }, 200)
+    expect(restored.board).toEqual(board)
+    expect(restored.variant).toBe('jieqi-mixed')
   })
   it('restores a checked position after undoing an escape', () => {
     const board = boardFromFen('4k4/9/9/9/4p4/9/9/9/4r4/4K4 r - - 0 1')

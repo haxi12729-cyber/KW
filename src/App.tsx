@@ -2,16 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import BoardView from './BoardView'
 import ResultDialog from './ResultDialog'
 import ActionDialog from './ActionDialog'
-import { firebaseReady, createRoom, getPlayer, joinRoom, restartRoom, roleFor, setPresence, submitMove, subscribeRoom, submitAction, serverNow, type Room } from './firebase'
-import { canMove, initialBoard, legalMoves, posKey, type Color, type GameStatus, type Move, type Pos } from './game'
+import { firebaseErrorMessage, firebaseReady, createRoom, getPlayer, isRoomOwner, joinFailureMessage, joinRoom, restartRoom, roleFor, setPresence, submitMove, subscribeRoom, submitAction, serverNow, type Room } from './firebase'
+import { canMove, effectiveColor, initialBoardFor, legalMoves, normalizeVariant, posKey, type Color, type GameStatus, type GameVariant, type Move, type Pos } from './game'
 import { actMatch, activeRequest, moveMatch, other, REQUEST_MS, type Match, type MatchAction } from './match'
 
 type Mode = 'home' | 'local' | 'online'
 type Snapshot = Match
-const fresh = (): Snapshot => ({ board: initialBoard(), turn: 'red', status: 'playing', moves: [], history: [], version: 0, gameId: 0 })
+const fresh = (variant: GameVariant = 'standard'): Snapshot => ({ board: initialBoardFor(variant), variant, turn: 'red', status: 'playing', moves: [], history: [], version: 0, gameId: 0 })
 const colorText = (color: Color) => color === 'red' ? '红方' : '黑方'
+const variantText = (variant: GameVariant | undefined) => normalizeVariant(variant) === 'jieqi-mixed' ? '揭棋 · 红黑混洗' : '普通象棋'
 function savedRoom() { try { return firebaseReady ? sessionStorage.getItem('xiangqi-room') : null } catch { return null } }
-const statusText = (status: GameStatus, turn: Color) => status === 'draw' ? '双方和棋' : status === 'waiting' ? '等待对手加入' : status === 'red-won' ? '红方胜' : status === 'black-won' ? '黑方胜' : status === 'check' ? '将军！' + colorText(turn) + '应将' : '轮到' + colorText(turn)
+export const statusText = (status: GameStatus, turn: Color) => status === 'draw' ? '双方和棋' : status === 'waiting' ? '等待对手加入' : status === 'red-won' ? '红方胜' : status === 'black-won' ? '黑方胜' : status === 'check' ? '将军！' + colorText(turn) + '被将军，请应将' : '轮到' + colorText(turn)
 
 function MoveList({ moves }: { moves: Move[] }) {
   return <section className="move-section"><div className="section-heading"><h2>棋谱</h2><span>{moves.length} 手</span></div>
@@ -28,6 +29,7 @@ export default function App() {
   const [uid, setUid] = useState<string | null>(null)
   const [room, setRoom] = useState<Room | null>(null)
   const [local, setLocal] = useState<Snapshot>(fresh)
+  const [selectedVariant, setSelectedVariant] = useState<GameVariant>('standard')
   const [clock, setClock] = useState(serverNow)
   const [resigning, setResigning] = useState<{ color: Color; gameId: number } | null>(null)
   const expiryAttempt = useRef({ id: '', at: 0 })
@@ -36,30 +38,31 @@ export default function App() {
   const [error, setError] = useState('')
   const [pending, setPending] = useState('')
   const busy = useRef(false)
-  const preview = useMemo(initialBoard, [])
+  const preview = useMemo(() => initialBoardFor(selectedVariant), [selectedVariant])
 
   async function perform(action: string, task: () => Promise<void>) {
     if (busy.current) return
     busy.current = true; setPending(action); setError(''); setNotice('')
-    try { await task() } catch (e) { setError(e instanceof Error ? e.message : '操作未完成，请重试。') }
+    try { await task() } catch (e) { setError(firebaseErrorMessage(e)) }
     finally { busy.current = false; setPending('') }
   }
   useEffect(() => {
     try { if (activeCode) sessionStorage.setItem('xiangqi-room', activeCode); else sessionStorage.removeItem('xiangqi-room') } catch { /* Storage may be disabled. */ }
-    if (activeCode && !uid) void getPlayer().then(player => setUid(player.uid)).catch(() => setError('恢复身份失败，请返回首页重试。'))
+    if (activeCode && !uid) void getPlayer().then(player => setUid(player.uid)).catch(e => setError(firebaseErrorMessage(e, '恢复身份失败，请返回首页重试。')))
   }, [activeCode, uid])
   useEffect(() => {
     if (!activeCode || !uid) return
-    return subscribeRoom(activeCode, setRoom, () => setError('房间连接失败，请稍后重新进入。'))
+    return subscribeRoom(activeCode, setRoom, e => setError(firebaseErrorMessage(e, '房间连接失败，请稍后重新进入。')))
   }, [activeCode, uid])
   const playerColor = useMemo(() => room && uid ? roleFor(room, uid) : null, [room, uid])
   useEffect(() => {
     if (!activeCode || !playerColor) return
-    void setPresence(activeCode, playerColor, true).catch(() => setError('在线状态更新失败，请检查网络。'))
+    void setPresence(activeCode, playerColor, true).catch(e => setError(firebaseErrorMessage(e, '在线状态更新失败，请检查网络。')))
     return () => { void setPresence(activeCode, playerColor, false).catch(() => {}) }
   }, [activeCode, playerColor])
   useEffect(() => { setSelected(null) }, [room?.version, mode])
-  const snapshot: Snapshot = mode === 'online' ? room ? { ...room, moves: room.moves || [] } : { ...fresh(), status: 'waiting' } : local
+  const snapshot: Snapshot = mode === 'online' ? room ? { ...room, variant: normalizeVariant(room.variant), moves: room.moves || [] } : { ...fresh(selectedVariant), status: 'waiting' } : local
+  const variant = normalizeVariant(snapshot.variant)
   const request = activeRequest(snapshot, clock)
   const actor = mode === 'local' ? snapshot.turn : playerColor
   const actionable = canMove(snapshot.status) && (mode === 'local' || !!(room?.blackUid && playerColor))
@@ -82,7 +85,7 @@ export default function App() {
     const outcome = snapshot.resolution?.outcome
     if (outcome) setNotice({ accepted: '对方已同意请求', rejected: '对方已拒绝请求', cancelled: '请求已取消', expired: '对方未在 10 秒内同意，请求已拒绝' }[outcome])
   }, [snapshot.resolution?.id, snapshot.resolution?.outcome])
-  const targets = selected && playable ? legalMoves(snapshot.board, selected) : []
+  const targets = selected && playable ? legalMoves(snapshot.board, selected, variant) : []
   const noticeBlock = <div className="feedback" aria-live="polite">{error ? <p className="error" role="alert">{error}</p> : notice ? <p>{notice}</p> : null}</div>
 
   async function play(from: Pos, to: Pos) {
@@ -100,9 +103,10 @@ export default function App() {
   function onCell(p: Pos) {
     if (!playable) return
     if (selected && targets.some(t => posKey(t) === posKey(p))) { void play(selected, p); return }
-    setSelected(snapshot.board[p.row][p.col]?.color === snapshot.turn ? p : null)
+    const piece = snapshot.board[p.row][p.col]
+    setSelected(piece && effectiveColor(piece) === snapshot.turn ? p : null)
   }
-  function newLocal() { setLocal(previous => ({ ...fresh(), gameId: (previous.gameId || 0) + 1 })); setResigning(null); setMode('local'); setActiveCode(null); setRoom(null); setSelected(null); setError(''); setNotice('') }
+  function newLocal() { setLocal(previous => ({ ...fresh(selectedVariant), gameId: (previous.gameId || 0) + 1 })); setResigning(null); setMode('local'); setActiveCode(null); setRoom(null); setSelected(null); setError(''); setNotice('') }
   function leave() { setActiveCode(null); setRoom(null); setMode('home'); setSelected(null); setError(''); setNotice('') }
   async function openRoom(join: boolean) {
     if (!firebaseReady) return
@@ -110,15 +114,24 @@ export default function App() {
     await perform(join ? 'join' : 'create', async () => {
       const playerUid = uid ?? (await getPlayer()).uid
       setUid(playerUid)
-      const code = join ? roomCode : await createRoom(playerUid)
-      if (join) setRoom(await joinRoom(code, playerUid)); else setRoom(null)
+      const code = join ? roomCode : await createRoom(playerUid, selectedVariant)
+      if (join) {
+        const result = await joinRoom(code, playerUid)
+        if (result.kind !== 'joined') throw new Error(joinFailureMessage(result))
+        setRoom(result.room)
+        setNotice(`加入成功，你执${colorText(result.color)}。`)
+      } else setRoom(null)
       setActiveCode(code); setRoomCode(code); setMode('online')
     })
   }
   async function restart() {
     setSelected(null)
-    if (mode === 'local') { newLocal(); return }
-    if (activeCode && uid && playerColor === 'red') await perform('restart', async () => { await restartRoom(activeCode, uid) })
+    if (mode === 'local') {
+      setLocal(previous => ({ ...fresh(normalizeVariant(previous.variant)), gameId: (previous.gameId || 0) + 1 }))
+      setResigning(null)
+      return
+    }
+    if (activeCode && uid && room && isRoomOwner(room, uid)) await perform('restart', async () => { await restartRoom(activeCode, uid) })
   }
   async function action(value: MatchAction, localActor: Color = snapshot.turn) {
     await perform(value.type, async () => {
@@ -140,17 +153,21 @@ export default function App() {
   if (mode === 'home') return <main className="landing">
     <header className="site-header"><div className="brand"><span className="seal">弈</span>楚汉弈局</div><span className="header-note">中国象棋 · 与友对弈</span></header>
     <div className="landing-layout"><section className="intro-panel"><p className="eyebrow">一方棋盘，两位棋友</p><h1>隔河相望，<br />落子有声。</h1><p className="intro">从一盘棋开始。和身边的朋友切磋，<br className="desktop-break" />也为远方的好友留一席。</p>
-      <div className="preview-board"><BoardView board={preview} /></div>
-      <p className="preview-caption">楚河汉界 · 红先黑后</p>
+      <div className="preview-board"><BoardView board={preview} variant={selectedVariant} /></div>
+      <p className="preview-caption">{selectedVariant === 'jieqi-mixed' ? '红黑混洗 · 走后揭子' : '楚河汉界 · 红先黑后'}</p>
     </section><section className="entry-panel panel"><p className="eyebrow">开始一局</p><h2>今天，和谁下棋？</h2>
+      <fieldset className="variant-picker"><legend>选择玩法</legend><div role="radiogroup" aria-label="选择象棋玩法">
+        <label className={selectedVariant === 'standard' ? 'selected' : ''}><input type="radio" name="variant" value="standard" checked={selectedVariant === 'standard'} onChange={() => setSelectedVariant('standard')} /><span><strong>普通象棋</strong><small>经典规则 · 将死判负</small></span></label>
+        <label className={selectedVariant === 'jieqi-mixed' ? 'selected' : ''}><input type="radio" name="variant" value="jieqi-mixed" checked={selectedVariant === 'jieqi-mixed'} onChange={() => setSelectedVariant('jieqi-mixed')} /><span><strong>揭棋</strong><small>红黑混洗 · 吃将获胜</small></span></label>
+      </div></fieldset>
       <div className="entry-option"><div className="option-heading"><span className="option-number">01</span><h3>同屏切磋</h3></div><p>共用一台设备，红黑双方轮流落子。</p><button className="button primary" disabled={!!pending} onClick={newLocal}>本地双人对弈 <span aria-hidden="true">↗</span></button></div>
-      <div className="entry-option"><div className="option-heading"><span className="option-number">02</span><h3>邀请远方棋友</h3></div><p>创建房间，把 6 位房间号分享给朋友。</p><button className="button secondary" onClick={() => void openRoom(false)} disabled={!firebaseReady || !!pending}>{pending === 'create' ? '正在创建房间…' : '创建联网房间'}</button></div>
+      <div className="entry-option"><div className="option-heading"><span className="option-number">02</span><h3>邀请远方棋友</h3></div><p>创建房间后随机执红或黑，把 6 位房间号分享给朋友。</p><button className="button secondary" onClick={() => void openRoom(false)} disabled={!firebaseReady || !!pending}>{pending === 'create' ? '正在创建房间…' : '创建联网房间'}</button></div>
       <form className="join-form" onSubmit={e => { e.preventDefault(); void openRoom(true) }}><label htmlFor="room-code">已有房间号？</label><div className="join-row"><input id="room-code" inputMode="numeric" autoComplete="off" maxLength={6} placeholder="输入 6 位房间号" value={roomCode} onChange={e => { setRoomCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }} /><button className="button secondary" type="submit" disabled={!firebaseReady || !!pending}>{pending === 'join' ? '加入中…' : '加入对战'}</button></div></form>
       {!firebaseReady && <p className="availability"><span aria-hidden="true">○</span> 联网暂未开放，可先体验本地对弈。</p>}{noticeBlock}
     </section></div><footer>车行直路，马踏斜日。落子之前，多想一步。</footer>
   </main>
 
-  return <main className="game-page"><header className="site-header"><button className="brand" onClick={leave} disabled={!!pending}><span className="seal">弈</span>楚汉弈局</button><span className="mode-badge">{mode === 'online' ? '好友房间 · ' + activeCode : '本地双人'}</span><button className="button quiet" onClick={leave} disabled={!!pending}>返回首页</button></header>
+  return <main className="game-page"><header className="site-header"><button className="brand" onClick={leave} disabled={!!pending}><span className="seal">弈</span>楚汉弈局</button><span className="mode-badge">{variantText(variant)} · {mode === 'online' ? '好友房间 ' + activeCode : '本地双人'}</span><button className="button quiet" onClick={leave} disabled={!!pending}>返回首页</button></header>
     {resigning && actionable && resigning.gameId === (snapshot.gameId || 0) && <ActionDialog title={colorText(resigning.color) + '认输'} pending={!!pending} onClose={() => setResigning(null)}>
       <p>确定认输吗？要不要再考虑一下？</p><p>确认前不会通知对方。</p>
       {error && <p className="error" role="alert">{error}</p>}
@@ -167,18 +184,18 @@ export default function App() {
       key={mode + ':' + activeCode + ':' + snapshot.status}
       winner={snapshot.status === 'draw' ? null : snapshot.status === 'red-won' ? 'red' : 'black'} reason={snapshot.reason} online={mode === 'online'} playerColor={playerColor}
       pending={!!pending} error={error} onRestart={() => void restart()} />}
-    <div className="game-layout"><section className="board-section"><div className="player-strip"><span><i className="side-dot black" />黑方</span><span>{mode === 'online' ? room?.presence?.black?.online ? '在线' : room?.blackUid ? '离线 · 等待重连' : '等待入座' : '执黑后行'}</span></div>
-      <div className="board-frame"><BoardView board={snapshot.board} selected={selected} targets={targets} onCell={onCell} disabled={!playable} /></div>
+      <div className="game-layout"><section className="board-section"><div className="player-strip"><span><i className="side-dot black" />黑方</span><span>{mode === 'online' ? room?.presence?.black?.online ? '在线' : room?.blackUid ? '离线 · 等待重连' : '等待入座' : '执黑后行'}</span></div>
+      <div className="board-frame"><BoardView board={snapshot.board} variant={variant} selected={selected} targets={targets} onCell={onCell} disabled={!playable} /></div>
       <div className="player-strip"><span><i className="side-dot red" />红方</span><span>{mode === 'online' ? room?.presence?.red?.online ? '在线' : '离线 · 等待重连' : '执红先行'}</span></div>
-      <p className="board-help">点击棋子，再点击落点；圆点表示可走位置。</p>
-    </section><aside className="panel game-panel"><section className="turn-section" aria-live="polite"><p className="eyebrow">当前局面</p><h1 id="game-status" tabIndex={-1}><i className={'side-dot ' + (snapshot.status === 'red-won' ? 'red' : snapshot.status === 'black-won' ? 'black' : snapshot.turn)} />{pending === 'move' ? '正在提交走棋…' : statusText(snapshot.status, snapshot.turn)}</h1><p>{mode === 'online' ? playerColor ? '你执' + colorText(playerColor) + (playerColor === 'red' ? ' · 房主' : '') : '正在连接房间…' : '双人轮流操作，请落子。'}</p></section>
+      <p className="board-help">{variant === 'jieqi-mixed' ? '暗子按所在位置走第一步，落子后揭开真实颜色与棋种；被将军时必须应将。' : '点击棋子，再点击落点；圆点表示可走位置。'}</p>
+    </section><aside className="panel game-panel"><section className="turn-section" aria-live="polite"><p className="eyebrow">当前局面</p><h1 id="game-status" tabIndex={-1}><i className={'side-dot ' + (snapshot.status === 'red-won' ? 'red' : snapshot.status === 'black-won' ? 'black' : snapshot.turn)} />{pending === 'move' ? '正在提交走棋…' : statusText(snapshot.status, snapshot.turn)}</h1><p>{mode === 'online' ? playerColor ? '你执' + colorText(playerColor) + (room && uid && isRoomOwner(room, uid) ? ' · 房主' : '') : '正在连接房间…' : '双人轮流操作，请落子。'}</p></section>
       {mode === 'online' && <div className="room-number"><div><span>邀请房间号</span><strong>{activeCode}</strong></div><button className="button secondary" onClick={() => void perform('copy', async () => { await navigator.clipboard.writeText(activeCode || ''); setNotice('房间号已复制。') })} disabled={!!pending}>复制</button></div>}
       <div className="controls"><button className="button secondary" disabled={!actionable || !!request || !!pending || !snapshot.history?.length || (mode === 'online' && playerColor !== other(snapshot.turn))} onClick={() => ask('undo')}>申请悔棋</button>
         <button className="button secondary" disabled={!actionable || !!request || !!pending} onClick={() => ask('draw')}>求和</button>
         <button className="button secondary" disabled={!actionable || !!pending} onClick={confirmResign}>{actor ? colorText(actor) : ''}认输</button>
-        <button className="button secondary" onClick={() => void restart()} disabled={!!pending || (mode === 'online' && playerColor !== 'red')}>{pending === 'restart' ? '重新开始中…' : mode === 'online' ? '房主重开' : '重新开始'}</button></div>
+        <button className="button secondary" onClick={() => void restart()} disabled={!!pending || (mode === 'online' && !(room && uid && isRoomOwner(room, uid)))}>{pending === 'restart' ? '重新开始中…' : mode === 'online' ? '房主重开' : '重新开始'}</button></div>
       {noticeBlock}<MoveList moves={snapshot.moves} />
-      <div className="panel-note">观棋不语，落子有度。<br />将死或无合法走法时，该方判负。</div>
+      <div className="panel-note">{variant === 'jieqi-mixed' ? <>暗子由棋背外圈阵营控制，揭开后归真实颜色。<br />直接吃掉对方将帅或令其无子可走即获胜。</> : <>观棋不语，落子有度。<br />将死或无合法走法时，该方判负。</>}</div>
     </aside></div>
   </main>
 }

@@ -19,7 +19,7 @@ it.skipIf(!host)('synchronizes two authenticated clients and rejects stale/illeg
   const red = ref(dbs[0], path); const black = ref(dbs[1], path)
   let stop = () => {}
   try {
-    await set(red, { redUid: 'red', board: initialBoard(), turn: 'red', version: 0, status: 'waiting', moves: [], createdAt: 1, updatedAt: 1, presence: { red: { online: true, lastSeen: 1 }, black: { online: false, lastSeen: 0 } } })
+    await set(red, { redUid: 'red', ownerUid: 'red', ownerSeat: 'red', board: initialBoard(), turn: 'red', version: 0, status: 'waiting', moves: [], createdAt: 1, updatedAt: 1, presence: { red: { online: true, lastSeen: 1 }, black: { online: false, lastSeen: 0 } } })
     await get(black)
     const joined = await runTransaction(black, room => room ? { ...room, blackUid: 'black', status: 'playing', version: 1, gameId: 1, operation: { type: 'join', uid: 'black' } } : room)
     expect(joined.committed).toBe(true)

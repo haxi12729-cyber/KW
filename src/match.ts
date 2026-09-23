@@ -1,8 +1,8 @@
-import { canMove, cloneBoard, playMove, type Board, type Color, type GameStatus, type Move, type Pos } from './game'
+import { canMove, cloneBoard, normalizeVariant, playMove, type Board, type Color, type GameStatus, type GameVariant, type Move, type Pos } from './game'
 
 export const REQUEST_MS = 10_000
 export const other = (color: Color): Color => color === 'red' ? 'black' : 'red'
-export type Position = { board: Board; turn: Color; status: GameStatus; moves: Move[] }
+export type Position = { board: Board; turn: Color; status: GameStatus; moves: Move[]; variant?: GameVariant }
 export type MatchRequest = { id: string; kind: 'undo' | 'draw'; by: Color; uid: string; version: number; createdAt: number }
 export type Match = Position & {
   version: number
@@ -19,12 +19,14 @@ export type MatchAction =
 
 export const activeRequest = (match: Match, now: number) => match.request && now < match.request.createdAt + REQUEST_MS ? match.request : null
 export function savePosition(match: Position): Position {
-  return { board: cloneBoard(match.board), turn: match.turn, status: match.status, moves: Object.values(match.moves || {}) }
+  return { board: cloneBoard(match.board), turn: match.turn, status: match.status, moves: Object.values(match.moves || {}), variant: normalizeVariant(match.variant) }
 }
 export function moveMatch(match: Match, from: Pos, to: Pos, now: number): Match {
   if (activeRequest(match, now)) throw new Error('请先处理对局请求')
-  const next = playMove(match.board, match.turn, match.status, from, to)
+  const variant = normalizeVariant(match.variant)
+  const next = playMove(match.board, match.turn, match.status, from, to, variant)
   return { ...match, board: next.board, turn: next.turn, status: next.status,
+    variant,
     moves: [...Object.values(match.moves || {}), next.move].slice(-80),
     history: [...Object.values(match.history || {}), JSON.stringify(savePosition(match))].slice(-80),
     version: match.version + 1, request: null, reason: null }
