@@ -16,6 +16,7 @@
 
   const defaultState = () => ({
     version: 1,
+    orientationMode: "auto",
     selectedTeacher: "young-female",
     teacherTransform: { scale: 100, x: 0, y: 0, flip: false },
     muted: false,
@@ -41,6 +42,7 @@
       return {
         ...base,
         ...parsed,
+        orientationMode: ["auto", "portrait", "landscape"].includes(parsed.orientationMode) ? parsed.orientationMode : "auto",
         teacherTransform: { ...base.teacherTransform, ...(parsed.teacherTransform || {}) },
         timer: { ...base.timer, ...parsed.timer },
         history: Array.isArray(parsed.history) ? parsed.history.slice(0, 20) : []
@@ -54,6 +56,8 @@
   let uploadedObjectUrl = null;
   let tickHandle = null;
   let toastHandle = null;
+  let orientationRequestPending = false;
+  let orientationFullscreenOwned = false;
 
   const $ = (selector) => document.querySelector(selector);
   const els = {
@@ -66,6 +70,8 @@
     goalDisplay: $("#goalDisplay"), goalDisplayText: $("#goalDisplayText"), goalInput: $("#goalInput"), saveGoal: $("#saveGoalButton"), newGoal: $("#newGoalButton"), completeGoal: $("#completeGoalButton"),
     historyList: $("#historyList"), historyCount: $("#historyCount"), emptyHistory: $("#emptyHistory"),
     sheet: $("#sideSheet"), backdrop: $("#sheetBackdrop"), closeSheet: $("#closeSheet"), teacherView: $("#teacherView"), goalView: $("#goalView"), sheetTitle: $("#sheetTitle"), sheetEyebrow: $("#sheetEyebrow"),
+    orientationCard: $("#orientationCard"), orientationRadios: [...document.querySelectorAll('[name="orientationMode"]')], orientationStatus: $("#orientationStatus"),
+    orientationPrompt: $("#orientationPrompt"), orientationPromptTitle: $("#orientationPromptTitle"), orientationPromptText: $("#orientationPromptText"), orientationRetry: $("#orientationRetry"), orientationContinue: $("#orientationContinue"),
     finishedDialog: $("#finishedDialog"), finishLater: $("#finishLater"), finishGoal: $("#finishGoal"), toast: $("#toast")
   };
 
@@ -420,9 +426,98 @@
 
   async function toggleFullscreen() {
     try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
-      else await document.exitFullscreen();
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        if (state.orientationMode !== "auto" && screen.orientation?.lock) {
+          try { await screen.orientation.lock(state.orientationMode); }
+          catch { showOrientationPrompt(true); }
+        }
+      } else await document.exitFullscreen();
     } catch { showToast("当前浏览器不支持全屏"); }
+  }
+
+  function actualOrientation() {
+    return window.matchMedia("(orientation: portrait)").matches ? "portrait" : "landscape";
+  }
+
+  function isOrientationSurface() {
+    return navigator.maxTouchPoints > 0 || Math.min(window.innerWidth, window.innerHeight) <= 760;
+  }
+
+  function orientationLabel(mode) {
+    return mode === "portrait" ? "竖屏" : "横屏";
+  }
+
+  function settleWithin(promise, timeoutMs = 2500) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("request timed out")), timeoutMs))
+    ]);
+  }
+
+  function hideOrientationPrompt() {
+    els.orientationPrompt.hidden = true;
+  }
+
+  function showOrientationPrompt(focus = false) {
+    if (state.orientationMode === "auto" || !isOrientationSurface()) return hideOrientationPrompt();
+    const label = orientationLabel(state.orientationMode);
+    els.orientationPromptTitle.textContent = `请将手机转为${label}`;
+    els.orientationPromptText.textContent = `当前浏览器无法自动锁定${label}，旋转设备后即可继续上课。`;
+    els.orientationPrompt.hidden = false;
+    if (focus) setTimeout(() => els.orientationRetry.focus(), 50);
+  }
+
+  function renderOrientation(options = {}) {
+    const actual = actualOrientation();
+    els.orientationRadios.forEach((radio) => { radio.checked = radio.value === state.orientationMode; });
+    els.orientationStatus.textContent = `当前：${orientationLabel(actual)}`;
+    document.documentElement.dataset.orientationPreference = state.orientationMode;
+    const mismatched = state.orientationMode !== "auto" && state.orientationMode !== actual;
+    if (!orientationRequestPending && mismatched) showOrientationPrompt(Boolean(options.focusPrompt));
+    else hideOrientationPrompt();
+  }
+
+  async function setOrientationMode(mode, options = {}) {
+    if (!["auto", "portrait", "landscape"].includes(mode)) return;
+    state.orientationMode = mode;
+    saveState();
+    renderOrientation();
+
+    if (mode === "auto") {
+      try { screen.orientation?.unlock?.(); } catch { /* best effort */ }
+      if (orientationFullscreenOwned && document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch { /* best effort */ }
+      }
+      orientationFullscreenOwned = false;
+      hideOrientationPrompt();
+      if (!options.silent) showToast("屏幕方向已设为自适应");
+      return;
+    }
+
+    closeSheet();
+    orientationRequestPending = true;
+    hideOrientationPrompt();
+    try {
+      if (!document.fullscreenElement) {
+        if (!document.documentElement.requestFullscreen) throw new Error("fullscreen unavailable");
+        await settleWithin(document.documentElement.requestFullscreen());
+        orientationFullscreenOwned = true;
+      }
+      if (!screen.orientation?.lock) throw new Error("orientation lock unavailable");
+      await settleWithin(screen.orientation.lock(mode));
+      showToast(`已切换至${orientationLabel(mode)}`);
+    } catch {
+      showToast(actualOrientation() === mode ? `已使用${orientationLabel(mode)}布局，浏览器未锁定方向` : `无法自动切换，请将手机转为${orientationLabel(mode)}`);
+    } finally {
+      orientationRequestPending = false;
+      renderOrientation({ focusPrompt: state.orientationMode !== actualOrientation() });
+    }
+  }
+
+  async function continueCurrentOrientation() {
+    await setOrientationMode("auto", { silent: true });
+    showToast("已继续使用当前方向");
   }
 
   function registerWebMcp() {
@@ -462,6 +557,7 @@
     applyTeacherTransform();
     renderGoal();
     renderTimer();
+    renderOrientation({ focusPrompt: true });
     tickHandle = setInterval(renderTimer, 250);
     registerWebMcp();
   }
@@ -474,6 +570,9 @@
   els.customMinutes.addEventListener("change", () => setDuration(els.customMinutes.value));
   els.muteButton.addEventListener("click", () => { state.muted = !state.muted; els.muteIcon.textContent = state.muted ? "×" : "♪"; els.muteButton.setAttribute("aria-label", state.muted ? "打开铃声" : "关闭铃声"); saveState(); showToast(state.muted ? "下课铃已静音" : "下课铃已开启"); });
   els.fullscreenButton.addEventListener("click", toggleFullscreen);
+  els.orientationRadios.forEach((radio) => radio.addEventListener("change", () => radio.checked && setOrientationMode(radio.value)));
+  els.orientationRetry.addEventListener("click", () => setOrientationMode(state.orientationMode));
+  els.orientationContinue.addEventListener("click", continueCurrentOrientation);
   $("#openSettings").addEventListener("click", () => openSheet("teacher"));
   $("#openTeacher").addEventListener("click", () => openSheet("teacher"));
   $("#openGoal").addEventListener("click", () => openSheet("goal"));
@@ -489,12 +588,23 @@
   els.flip.addEventListener("change", updateTransform);
   els.finishLater.addEventListener("click", () => els.finishedDialog.close());
   els.finishGoal.addEventListener("click", () => state.goal?.text && !state.goal.completed ? completeCurrentGoal() : els.finishedDialog.close());
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && els.sheet.classList.contains("open")) closeSheet(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!els.orientationPrompt.hidden) continueCurrentOrientation();
+    else if (els.sheet.classList.contains("open")) closeSheet();
+  });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) renderTimer(); });
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) orientationFullscreenOwned = false;
+    els.fullscreenButton.setAttribute("aria-label", document.fullscreenElement ? "退出全屏" : "进入全屏");
+    els.fullscreenButton.title = document.fullscreenElement ? "退出全屏" : "全屏";
+    renderOrientation();
+  });
+  window.addEventListener("resize", renderOrientation);
+  screen.orientation?.addEventListener?.("change", renderOrientation);
   window.addEventListener("beforeunload", () => { if (tickHandle) clearInterval(tickHandle); if (uploadedObjectUrl) URL.revokeObjectURL(uploadedObjectUrl); });
 
   els.muteIcon.textContent = state.muted ? "×" : "♪";
   els.muteButton.setAttribute("aria-label", state.muted ? "打开铃声" : "关闭铃声");
   init();
 })();
-

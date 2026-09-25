@@ -92,6 +92,19 @@
       </div>
 
       <div class="sheet-view" id="teacherView">
+        <fieldset class="orientation-card" id="orientationCard">
+          <legend class="sr-only">屏幕方向</legend>
+          <div class="orientation-heading">
+            <strong>屏幕方向</strong>
+            <span id="orientationStatus" aria-live="polite">当前：竖屏</span>
+          </div>
+          <div class="orientation-options">
+            <label><input type="radio" name="orientationMode" value="auto" /><span>自适应</span></label>
+            <label><input type="radio" name="orientationMode" value="portrait" /><span>竖屏</span></label>
+            <label><input type="radio" name="orientationMode" value="landscape" /><span>横屏</span></label>
+          </div>
+          <p>手机浏览器支持时会进入全屏并锁定方向。</p>
+        </fieldset>
         <p class="section-hint">选择一位老师陪你上完这节课。</p>
         <div class="teacher-grid" id="teacherGrid"></div>
         <div class="upload-card">
@@ -136,8 +149,18 @@
       </div>
     </dialog>
 
+    <section class="orientation-prompt" id="orientationPrompt" role="dialog" aria-modal="true" aria-labelledby="orientationPromptTitle" hidden>
+      <div class="rotate-mark" aria-hidden="true">↻</div>
+      <p class="eyebrow">调整观看方向</p>
+      <h2 id="orientationPromptTitle">请将手机转为横屏</h2>
+      <p id="orientationPromptText">当前浏览器无法自动锁定方向，旋转设备后即可继续上课。</p>
+      <div class="orientation-prompt-actions">
+        <button class="secondary-button" id="orientationContinue" type="button">继续当前方向</button>
+        <button class="primary-button" id="orientationRetry" type="button">重新尝试</button>
+      </div>
+    </section>
+
     <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
     <script src="./app.js" defer></script>
   </body>
 </html>
-
