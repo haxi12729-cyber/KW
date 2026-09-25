@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#163e37" />
+    <meta name="description" content="沉浸式中国高中课堂自习工具，支持老师形象、正计时、倒计时和本节目标。" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23163e37'/%3E%3Crect x='11' y='13' width='42' height='28' rx='3' fill='%2329584c' stroke='%23e9d8a6' stroke-width='3'/%3E%3Cpath d='M19 24h26M19 31h18' stroke='%23f4e9c9' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M23 51h18M32 41v10' stroke='%23e9d8a6' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <title>在教室 · 沉浸自习</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="classroom" id="classroom">
+      <img class="classroom-bg" src="./assets/classroom-background.jpg" alt="从后排望向黑板的中国高中教室，同学们正在听课" />
+      <div class="light-wash" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+
+      <header class="topbar">
+        <div class="brand" aria-label="在教室">
+          <span class="brand-mark" aria-hidden="true">在</span>
+          <span>在教室</span>
+        </div>
+        <div class="class-status" aria-live="polite">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="classStatus">课前准备</span>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="muteButton" type="button" aria-label="关闭铃声" title="铃声">
+            <span aria-hidden="true" id="muteIcon">♪</span>
+          </button>
+          <button class="icon-button" id="fullscreenButton" type="button" aria-label="进入全屏" title="全屏">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+          </button>
+          <button class="settings-button" id="openSettings" type="button" aria-label="课堂设置">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.01V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.96 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+            <span>课堂设置</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="blackboard-note" aria-label="本节课目标">
+        <span class="note-label">本节课</span>
+        <button class="goal-display" id="goalDisplay" type="button" aria-label="编辑本节目标">
+          <span id="goalDisplayText">写下这节课要完成的事</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 5 4 4L9 19H5v-4L15 5Z"/></svg>
+        </button>
+      </section>
+
+      <div class="teacher-stage" id="teacherStage">
+        <div class="teacher-shadow" aria-hidden="true"></div>
+        <img id="teacherImage" class="teacher-image" src="./assets/teacher-young-female.png" alt="站在讲台前的林老师" />
+      </div>
+
+      <section class="timer-dock" aria-label="课堂计时器">
+        <div class="mode-tabs" role="tablist" aria-label="计时方式">
+          <button class="mode-tab active" id="stopwatchTab" data-mode="stopwatch" role="tab" aria-selected="true" type="button">自由自习</button>
+          <button class="mode-tab" id="countdownTab" data-mode="countdown" role="tab" aria-selected="false" type="button">一节课</button>
+        </div>
+        <div class="timer-main">
+          <div class="timer-copy">
+            <span class="timer-kicker" id="timerKicker">已专注</span>
+            <time class="timer-value" id="timerValue" datetime="PT0S">00:00:00</time>
+          </div>
+          <div class="timer-actions">
+            <button class="secondary-button" id="resetButton" type="button">重置</button>
+            <button class="primary-button" id="startButton" type="button">
+              <span class="play-icon" aria-hidden="true">▶</span>
+              <span id="startLabel">开始上课</span>
+            </button>
+          </div>
+        </div>
+        <div class="duration-row" id="durationRow" hidden>
+          <span>课时</span>
+          <div class="duration-options" aria-label="倒计时时长">
+            <button data-minutes="25" type="button">25 分钟</button>
+            <button class="selected" data-minutes="45" type="button">45 分钟</button>
+            <button data-minutes="60" type="button">60 分钟</button>
+            <label class="custom-duration"><span>自定</span><input id="customMinutes" type="number" min="1" max="240" inputmode="numeric" aria-label="自定义分钟数" placeholder="分钟" /></label>
+          </div>
+        </div>
+      </section>
+
+      <button class="side-tab goal-tab" id="openGoal" type="button" aria-label="打开目标面板"><span aria-hidden="true">✓</span><span>目标</span></button>
+      <button class="side-tab teacher-tab" id="openTeacher" type="button" aria-label="打开老师面板"><span aria-hidden="true">人</span><span>老师</span></button>
+    </main>
+
+    <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+    <aside class="side-sheet" id="sideSheet" aria-hidden="true" aria-label="课堂设置">
+      <div class="sheet-header">
+        <div><p class="eyebrow" id="sheetEyebrow">课堂设置</p><h2 id="sheetTitle">选择老师</h2></div>
+        <button class="close-button" id="closeSheet" type="button" aria-label="关闭设置">×</button>
+      </div>
+
+      <div class="sheet-view" id="teacherView">
+        <p class="section-hint">选择一位老师陪你上完这节课。</p>
+        <div class="teacher-grid" id="teacherGrid"></div>
+        <div class="upload-card">
+          <div><strong>使用自己的老师图片</strong><p>支持 PNG、JPG、WebP，图片只保存在本机。</p></div>
+          <label class="upload-button" for="teacherUpload">选择图片</label>
+          <input id="teacherUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+        </div>
+        <div class="adjust-panel" id="adjustPanel" hidden>
+          <div class="adjust-title"><strong>调整画面</strong><button class="text-button danger" id="deleteUpload" type="button">删除上传图片</button></div>
+          <label>大小 <input id="scaleSlider" type="range" min="60" max="160" value="100" /><output id="scaleOutput">100%</output></label>
+          <label>左右 <input id="xSlider" type="range" min="-120" max="120" value="0" /><output id="xOutput">0</output></label>
+          <label>上下 <input id="ySlider" type="range" min="-80" max="80" value="0" /><output id="yOutput">0</output></label>
+          <label class="switch-row"><span>水平翻转</span><input id="flipToggle" type="checkbox" role="switch" /></label>
+        </div>
+      </div>
+
+      <div class="sheet-view" id="goalView" hidden>
+        <p class="section-hint">把这节课最重要的一件事写下来。</p>
+        <label class="field-label" for="goalInput">本节目标</label>
+        <textarea id="goalInput" maxlength="120" rows="4" placeholder="例如：完成数学函数错题整理"></textarea>
+        <div class="goal-actions">
+          <button class="secondary-button" id="newGoalButton" type="button">新目标</button>
+          <button class="primary-button" id="saveGoalButton" type="button">保存目标</button>
+        </div>
+        <button class="complete-button" id="completeGoalButton" type="button" disabled><span aria-hidden="true">✓</span>完成本节目标</button>
+        <div class="history-section">
+          <div class="history-heading"><h3>最近课堂</h3><span id="historyCount">0 条</span></div>
+          <ol class="history-list" id="historyList"></ol>
+          <p class="empty-history" id="emptyHistory">完成目标后，课堂记录会出现在这里。</p>
+        </div>
+      </div>
+    </aside>
+
+    <dialog class="finished-dialog" id="finishedDialog">
+      <div class="bell-mark" aria-hidden="true">✓</div>
+      <p class="eyebrow">下课铃响了</p>
+      <h2>这一节，完成了</h2>
+      <p>先伸个懒腰，再决定要不要开始下一节。</p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="finishLater" type="button">稍后整理</button>
+        <button class="primary-button" id="finishGoal" type="button">完成本节目标</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
+
