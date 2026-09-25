@@ -17,6 +17,7 @@
   const defaultState = () => ({
     version: 1,
     orientationMode: "auto",
+    forceLandscape: false,
     selectedTeacher: "young-female",
     teacherTransform: { scale: 100, x: 0, y: 0, flip: false },
     muted: false,
@@ -43,6 +44,7 @@
         ...base,
         ...parsed,
         orientationMode: ["auto", "portrait", "landscape"].includes(parsed.orientationMode) ? parsed.orientationMode : "auto",
+        forceLandscape: parsed.forceLandscape === true,
         teacherTransform: { ...base.teacherTransform, ...(parsed.teacherTransform || {}) },
         timer: { ...base.timer, ...parsed.timer },
         history: Array.isArray(parsed.history) ? parsed.history.slice(0, 20) : []
@@ -71,7 +73,7 @@
     historyList: $("#historyList"), historyCount: $("#historyCount"), emptyHistory: $("#emptyHistory"),
     sheet: $("#sideSheet"), backdrop: $("#sheetBackdrop"), closeSheet: $("#closeSheet"), teacherView: $("#teacherView"), goalView: $("#goalView"), sheetTitle: $("#sheetTitle"), sheetEyebrow: $("#sheetEyebrow"),
     orientationCard: $("#orientationCard"), orientationRadios: [...document.querySelectorAll('[name="orientationMode"]')], orientationStatus: $("#orientationStatus"),
-    orientationPrompt: $("#orientationPrompt"), orientationPromptTitle: $("#orientationPromptTitle"), orientationPromptText: $("#orientationPromptText"), orientationRetry: $("#orientationRetry"), orientationContinue: $("#orientationContinue"),
+    orientationPrompt: $("#orientationPrompt"), orientationPromptTitle: $("#orientationPromptTitle"), orientationPromptText: $("#orientationPromptText"), orientationRetry: $("#orientationRetry"), orientationContinue: $("#orientationContinue"), orientationForce: $("#orientationForce"),
     finishedDialog: $("#finishedDialog"), finishLater: $("#finishLater"), finishGoal: $("#finishGoal"), toast: $("#toast")
   };
 
@@ -437,11 +439,17 @@
   }
 
   function actualOrientation() {
-    return window.matchMedia("(orientation: portrait)").matches ? "portrait" : "landscape";
+    const viewport = window.visualViewport;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
+    return width > height ? "landscape" : "portrait";
   }
 
   function isOrientationSurface() {
-    return navigator.maxTouchPoints > 0 || Math.min(window.innerWidth, window.innerHeight) <= 760;
+    const viewport = window.visualViewport;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
+    return navigator.maxTouchPoints > 0 || (Math.min(width, height) <= 760 && Math.max(width, height) <= 1024);
   }
 
   function orientationLabel(mode) {
@@ -463,24 +471,35 @@
     if (state.orientationMode === "auto" || !isOrientationSurface()) return hideOrientationPrompt();
     const label = orientationLabel(state.orientationMode);
     els.orientationPromptTitle.textContent = `请将手机转为${label}`;
-    els.orientationPromptText.textContent = `当前浏览器无法自动锁定${label}，旋转设备后即可继续上课。`;
+    els.orientationPromptText.textContent = state.orientationMode === "landscape"
+      ? "请先在安卓快捷设置中开启“自动旋转”并横放手机；如果仍没有变化，可以使用强制横版。"
+      : `当前浏览器无法自动锁定${label}，旋转设备后即可继续上课。`;
+    els.orientationForce.hidden = state.orientationMode !== "landscape";
+    els.orientationContinue.textContent = state.orientationMode === "landscape" ? "继续竖屏" : "继续当前方向";
     els.orientationPrompt.hidden = false;
-    if (focus) setTimeout(() => els.orientationRetry.focus(), 50);
+    if (focus) setTimeout(() => (state.orientationMode === "landscape" ? els.orientationForce : els.orientationRetry).focus(), 50);
   }
 
   function renderOrientation(options = {}) {
     const actual = actualOrientation();
+    const forceActive = state.orientationMode === "landscape" && state.forceLandscape && actual === "portrait" && isOrientationSurface();
+    const compactLandscape = forceActive || (actual === "landscape" && isOrientationSurface());
     els.orientationRadios.forEach((radio) => { radio.checked = radio.value === state.orientationMode; });
-    els.orientationStatus.textContent = `当前：${orientationLabel(actual)}`;
+    els.orientationStatus.textContent = forceActive ? "当前：强制横版" : `当前：${orientationLabel(actual)}`;
     document.documentElement.dataset.orientationPreference = state.orientationMode;
-    const mismatched = state.orientationMode !== "auto" && state.orientationMode !== actual;
+    document.documentElement.classList.toggle("force-landscape", forceActive);
+    document.documentElement.classList.toggle("effective-landscape", compactLandscape);
+    const effective = forceActive ? "landscape" : actual;
+    const mismatched = state.orientationMode !== "auto" && state.orientationMode !== effective;
     if (!orientationRequestPending && mismatched) showOrientationPrompt(Boolean(options.focusPrompt));
     else hideOrientationPrompt();
   }
 
   async function setOrientationMode(mode, options = {}) {
     if (!["auto", "portrait", "landscape"].includes(mode)) return;
+    const previousMode = state.orientationMode;
     state.orientationMode = mode;
+    if (mode !== "landscape" || previousMode !== "landscape") state.forceLandscape = false;
     saveState();
     renderOrientation();
 
@@ -518,6 +537,16 @@
   async function continueCurrentOrientation() {
     await setOrientationMode("auto", { silent: true });
     showToast("已继续使用当前方向");
+  }
+
+  function enableForcedLandscape() {
+    state.orientationMode = "landscape";
+    state.forceLandscape = true;
+    orientationRequestPending = false;
+    saveState();
+    hideOrientationPrompt();
+    renderOrientation();
+    showToast("已启用强制横版，切回自适应可退出");
   }
 
   function registerWebMcp() {
@@ -573,6 +602,7 @@
   els.orientationRadios.forEach((radio) => radio.addEventListener("change", () => radio.checked && setOrientationMode(radio.value)));
   els.orientationRetry.addEventListener("click", () => setOrientationMode(state.orientationMode));
   els.orientationContinue.addEventListener("click", continueCurrentOrientation);
+  els.orientationForce.addEventListener("click", enableForcedLandscape);
   $("#openSettings").addEventListener("click", () => openSheet("teacher"));
   $("#openTeacher").addEventListener("click", () => openSheet("teacher"));
   $("#openGoal").addEventListener("click", () => openSheet("goal"));
@@ -601,6 +631,8 @@
     renderOrientation();
   });
   window.addEventListener("resize", renderOrientation);
+  window.addEventListener("orientationchange", renderOrientation);
+  window.visualViewport?.addEventListener?.("resize", renderOrientation);
   screen.orientation?.addEventListener?.("change", renderOrientation);
   window.addEventListener("beforeunload", () => { if (tickHandle) clearInterval(tickHandle); if (uploadedObjectUrl) URL.revokeObjectURL(uploadedObjectUrl); });
 

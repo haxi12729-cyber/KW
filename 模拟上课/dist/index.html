@@ -155,8 +155,11 @@
       <h2 id="orientationPromptTitle">请将手机转为横屏</h2>
       <p id="orientationPromptText">当前浏览器无法自动锁定方向，旋转设备后即可继续上课。</p>
       <div class="orientation-prompt-actions">
-        <button class="secondary-button" id="orientationContinue" type="button">继续当前方向</button>
-        <button class="primary-button" id="orientationRetry" type="button">重新尝试</button>
+        <button class="primary-button orientation-force" id="orientationForce" type="button">强制横版</button>
+        <div class="orientation-secondary-actions">
+          <button class="secondary-button" id="orientationContinue" type="button">继续竖屏</button>
+          <button class="secondary-button" id="orientationRetry" type="button">重新尝试</button>
+        </div>
       </div>
     </section>
 
